@@ -1,12 +1,11 @@
 package br.com.diego.silva.nats;
 
 import io.nats.client.Connection;
+import io.nats.client.Nats;
 import io.nats.streaming.*;
 
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeoutException;
@@ -14,25 +13,60 @@ import java.util.concurrent.TimeoutException;
 public class NatsStreamConnectionWrapper {
 
     private StreamingConnection streamingConnection;
+    private Connection natsConnection;
     private final String clusterId;
     private final String clientId;
     private final Map<String, NatsEventHandler> handlers = new HashMap<>();
     private final Map<String, Subscription> subscriptions = new HashMap<>();
+    private Timer streammingConnectionTimer = new Timer();
 
-    public NatsStreamConnectionWrapper(Connection nastsConnection, String clusterId, String clientId) {
+    public NatsStreamConnectionWrapper(String natsUrl, String clusterId, String clientId) {
         this.clientId = clientId;
         this.clusterId = clusterId;
-        createStreamingConnection(nastsConnection);
+        this.natsConnection = createNatsConnection(natsUrl);
+        createStreamingConnection(this.natsConnection);
+    }
+
+    private Connection createNatsConnection(String natsUrl) {
+        try {
+            io.nats.client.Options options = new io.nats.client.Options.Builder().server(natsUrl)
+                    .maxReconnects(-1)
+                    .reconnectBufferSize(-1)
+                    .maxControlLine(1024)
+                    .connectionListener((newConnection, type) -> {
+                        switch (type) {
+                            case RECONNECTED:
+                                break;
+                            case RESUBSCRIBED:
+                                this.reconnect(newConnection);
+                                break;
+                        }
+                    }).build();
+            return Nats.connect(options);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            throw new RuntimeException(ex);
+        }
     }
 
     private void createStreamingConnection(Connection connection) {
         try {
+            streammingConnectionTimer.cancel();
             Options streamingOpt = new Options.Builder()
                     .natsConn(connection)
                     .clusterId(clusterId)
-                    .clientId(clientId).build();
+                    .clientId(clientId)
+                    .build();
             this.streamingConnection = new StreamingConnectionFactory(streamingOpt).createConnection();
+            System.out.println("Created");
         } catch (Exception e) {
+            e.printStackTrace();
+            streammingConnectionTimer.schedule(new TimerTask() {
+                @Override
+                public void run() {
+                    createStreamingConnection(connection);
+                }
+            }, 2000);
             throw new RuntimeException(e);
         }
     }
@@ -59,18 +93,21 @@ public class NatsStreamConnectionWrapper {
             handlers.put(topic, handler);
             subscriptions.put(topic, subscription);
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException(e);
         }
     }
 
-    public void reconnect(Connection connection) {
+    private void reconnect(Connection connection) {
+        System.out.println("Reconectando");
+        this.natsConnection = connection;
         createStreamingConnection(connection);
         Set<Map.Entry<String, NatsEventHandler>> entries = handlers.entrySet();
         entries.forEach(entri -> subscribe(entri.getKey(), entri.getValue()));
     }
 
     public void publish(String subject, byte[] data) throws InterruptedException, TimeoutException, IOException {
-        if(streamingConnection == null || streamingConnection.getNatsConnection() == null){
+        if (streamingConnection == null || streamingConnection.getNatsConnection() == null) {
             throw new RuntimeException("Nats connection is not ok to publish");
         }
         streamingConnection.publish(subject, data);
@@ -79,15 +116,12 @@ public class NatsStreamConnectionWrapper {
     public CompletionStage<String> publishAsync(String subject, byte[] data) {
         CompletableFuture<String> future = new CompletableFuture<>();
 
-        if(streamingConnection == null || streamingConnection.getNatsConnection() == null){
+        if (streamingConnection == null || streamingConnection.getNatsConnection() == null) {
             future.completeExceptionally(new RuntimeException("Nats connection is not ok to publish"));
         }
         try {
             streamingConnection.publish(subject, data, (nuid, ex) -> {
-                if (ex != null)
-                    future.complete(nuid);
-                else
-                    future.completeExceptionally(ex);
+                future.complete(nuid);
             });
         } catch (Exception e) {
             future.completeExceptionally(e);
