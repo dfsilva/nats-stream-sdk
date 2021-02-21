@@ -58,7 +58,6 @@ public class NatsStreamConnectionWrapper {
                     .clientId(clientId)
                     .build();
             this.streamingConnection = new StreamingConnectionFactory(streamingOpt).createConnection();
-            System.out.println("Created");
         } catch (Exception e) {
             e.printStackTrace();
             streammingConnectionTimer.schedule(new TimerTask() {
@@ -71,7 +70,7 @@ public class NatsStreamConnectionWrapper {
         }
     }
 
-    public void subscribe(String topic, NatsEventHandler handler) {
+    public void subscribe(String topic, NatsEventHandler handler, Optional<String> durableName) {
         try {
             if (subscriptions.containsKey(topic)) {
                 try {
@@ -87,9 +86,8 @@ public class NatsStreamConnectionWrapper {
                             throw new RuntimeException(e);
                         }
                     },
-                    new SubscriptionOptions.Builder().durableName("durable_" + topic + "_" + this.clientId)
+                    new SubscriptionOptions.Builder().durableName(durableName.orElse("durable_" + topic + "_" + this.clientId))
                             .manualAcks().build());
-
             handlers.put(topic, handler);
             subscriptions.put(topic, subscription);
         } catch (Exception e) {
@@ -99,11 +97,10 @@ public class NatsStreamConnectionWrapper {
     }
 
     private void reconnect(Connection connection) {
-        System.out.println("Reconectando");
         this.natsConnection = connection;
         createStreamingConnection(connection);
         Set<Map.Entry<String, NatsEventHandler>> entries = handlers.entrySet();
-        entries.forEach(entri -> subscribe(entri.getKey(), entri.getValue()));
+        entries.forEach(entry -> subscribe(entry.getKey(), entry.getValue(), Optional.of(subscriptions.get(entry.getKey()).getOptions().getDurableName())));
     }
 
     public void publish(String subject, byte[] data) throws InterruptedException, TimeoutException, IOException {
@@ -117,7 +114,7 @@ public class NatsStreamConnectionWrapper {
         CompletableFuture<String> future = new CompletableFuture<>();
 
         if (streamingConnection == null || streamingConnection.getNatsConnection() == null) {
-            future.completeExceptionally(new RuntimeException("Nats connection is not ok to publish"));
+            future.completeExceptionally(new RuntimeException("Nats connection cannot publish because is not connected"));
         }
         try {
             streamingConnection.publish(subject, data, (nuid, ex) -> {
