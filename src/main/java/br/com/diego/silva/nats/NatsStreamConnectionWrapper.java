@@ -70,7 +70,7 @@ public class NatsStreamConnectionWrapper {
         }
     }
 
-    public void subscribe(String topic, NatsEventHandler handler, Optional<String> durableName) {
+    public Subscription subscribe(String topic, NatsEventHandler handler, Optional<String> durableName) {
         try {
             if (subscriptions.containsKey(topic)) {
                 try {
@@ -90,6 +90,8 @@ public class NatsStreamConnectionWrapper {
                             .manualAcks().build());
             handlers.put(topic, handler);
             subscriptions.put(topic, subscription);
+
+            return subscription;
         } catch (Exception e) {
             e.printStackTrace();
             throw new RuntimeException(e);
