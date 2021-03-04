@@ -3,6 +3,8 @@ package br.com.diego.silva.nats;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.streaming.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
@@ -11,6 +13,8 @@ import java.util.concurrent.CompletionStage;
 import java.util.concurrent.TimeoutException;
 
 public class NatsStreamConnectionWrapper {
+
+    private static Logger logger = LoggerFactory.getLogger(NatsStreamConnectionWrapper.class);
 
     private StreamingConnection streamingConnection;
     private Connection natsConnection;
@@ -44,14 +48,19 @@ public class NatsStreamConnectionWrapper {
                     }).build();
             return Nats.connect(options);
         } catch (Exception ex) {
-            ex.printStackTrace();
+            logger.error(ex.getMessage(), ex);
             throw new RuntimeException(ex);
         }
     }
 
     private void createStreamingConnection(Connection connection) {
         try {
-            streammingConnectionTimer.cancel();
+            try {
+                streammingConnectionTimer.cancel();
+                streammingConnectionTimer.purge();
+            } catch (Exception e) {
+                logger.warn("Exception canceling timer", e);
+            }
             Options streamingOpt = new Options.Builder()
                     .natsConn(connection)
                     .clusterId(clusterId)
@@ -59,7 +68,7 @@ public class NatsStreamConnectionWrapper {
                     .build();
             this.streamingConnection = new StreamingConnectionFactory(streamingOpt).createConnection();
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error(e.getMessage(), e);
             streammingConnectionTimer.schedule(new TimerTask() {
                 @Override
                 public void run() {
@@ -93,7 +102,7 @@ public class NatsStreamConnectionWrapper {
 
             return subscription;
         } catch (Exception e) {
-            e.printStackTrace();
+            logger.error(e.getMessage(), e);
             throw new RuntimeException(e);
         }
     }
