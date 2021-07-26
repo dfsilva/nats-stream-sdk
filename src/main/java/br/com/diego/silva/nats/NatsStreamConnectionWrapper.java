@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -96,7 +97,7 @@ public class NatsStreamConnectionWrapper {
                         }
                     },
                     new SubscriptionOptions.Builder().durableName(durableName.orElse("durable_" + topic + "_" + this.clientId))
-                            .manualAcks().build());
+                            .manualAcks().ackWait(Duration.ofSeconds(10)).build());
             handlers.put(topic, handler);
             subscriptions.put(topic, subscription);
 
