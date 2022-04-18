@@ -98,7 +98,7 @@ public class NatsStreamConnectionWrapper {
             },
                     new SubscriptionOptions.Builder()
                             .durableName(durableName.orElse("durable_" + topic + "_" + this.clientId))
-                            .dispatcher("dispatcher_" + topic + "_" + this.clientId)
+                            .dispatcher(durableName.orElse("dispatcher_" + topic + "_" + this.clientId))
                             .manualAcks().ackWait(Duration.ofSeconds(10)).build());
             handlers.put(topic, handler);
             subscriptions.put(topic, subscription);
